@@ -172,7 +172,7 @@ ret_code_t hal_nfc_start(void);
   * @retval NRF_SUCCESS If the packet was sent. Otherwise, an error code is returned.
   */
 ret_code_t hal_nfc_send(const uint8_t * p_data, size_t data_length);
-
+uint8_t *hal_nfc_get_tx_buffer(void);
 
 /** @brief Function for stopping the NFC subsystem.
   *

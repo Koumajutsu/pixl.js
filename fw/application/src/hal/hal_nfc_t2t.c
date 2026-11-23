@@ -664,13 +664,23 @@ ret_code_t hal_nfc_start(void) {
     NRF_LOG_INFO("Start");
     return NRF_SUCCESS;
 }
-#define NFC_BUFFER_SIZE 255u                                                              /**< NFC data buffer size */
+#define NFC_BUFFER_SIZE 552u                                                              /**< NFC data buffer size */
 static volatile uint8_t m_nfc_buffer[NFC_BUFFER_SIZE] __attribute__((aligned(32))) = {0}; /**< Buffer for NFC Rx data */
+
+uint8_t *hal_nfc_get_tx_buffer(void) {
+    return (uint8_t *)m_nfc_buffer;
+}
 
 ret_code_t hal_nfc_send(const uint8_t *p_data, size_t data_length) {
     if ((data_length == 0) || (data_length > NFC_BUFFER_SIZE)) {
         return NRF_ERROR_DATA_SIZE;
     }
+
+    if (p_data != (const uint8_t *)m_nfc_buffer) {
+        memcpy((void *)m_nfc_buffer, p_data, data_length);
+    }
+
+    memcpy((void *)m_nfc_buffer, p_data, data_length);
 
     memcpy(m_nfc_buffer, p_data, NFC_BUFFER_SIZE);
     /* Ignore previous TX END events, SW takes care only for data frames which tranmission is triggered in this function

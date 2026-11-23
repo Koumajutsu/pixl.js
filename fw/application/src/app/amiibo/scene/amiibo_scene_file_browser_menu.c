@@ -126,7 +126,7 @@ static void amiibo_scene_file_browser_text_input_create_amiibo_batch_event_cb(mu
 
             cwalk_append_segment(path, string_get_cstr(app->current_folder), file_name);
             ntag_store_new_rand(&ntag);
-            int32_t res = p_driver->write_file_data(path, ntag.data, _ntag_data_size(ntag.data));
+            int32_t res = p_driver->write_file_data(path, ntag.data, _ntag_data_size(&ntag));
             if (res < 0) {
                 sprintf(msg, _T(CREATING_TAG_FAILED), file_name);
                 amiibo_scene_file_browser_show_messege(app, msg);

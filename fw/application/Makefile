@@ -687,6 +687,8 @@ LDFLAGS += -Wl,--gc-sections
 # use newlib in nano version
 LDFLAGS += --specs=nano.specs
 LDFLAGS += -u _printf_float
+# find overflow linker errors
+LDFLAGS += -Wl,--print-memory-usage
 
 pixljs: CFLAGS += -D__HEAP_SIZE=4096
 pixljs: CFLAGS += -D__STACK_SIZE=8192

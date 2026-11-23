@@ -106,19 +106,29 @@ static void nfc_received_process(const uint8_t *p_data, size_t data_length, uint
     uint8_t block_num = p_data[1];
 
     switch (command) {
-    case NFC_CMD_READ:
+    case NFC_CMD_READ: {
         NRF_LOG_INFO("NFC Read Block %d", block_num);
-        int full_block = ((int) ntag_emu.sector * 256 + block_num);
-        if ((full_block + 3) * 4 < _ntag_data_size(&ntag_emu.ntag)) {
-            static uint8_t chunk_data[16] = {0};
-            memcpy(chunk_data, &plain[full_block*4], 16);
+        int full_block = ((int)ntag_emu.sector * 256 + block_num);
+        size_t tag_bytes = _ntag_data_size(&ntag_emu.ntag);
+        int total_pages = (int)(tag_bytes / 4);
+        uint8_t *chunk_data = hal_nfc_get_tx_buffer();
+        if (ntag_emu.ntag.type == NTAG_215 && full_block < total_pages) {
+            memset(chunk_data, 0, 16);
+            for (int i = 0; i < 4; i++) {
+                int page = (full_block + i) % total_pages;
+                if (page == 133 || page == 134) {
+                    memset(chunk_data + (i * 4), 0x00, 4);
+                } else {
+                    memcpy(chunk_data + (i * 4), &plain[page * 4], 4);
+                }
+            }
+            APP_ERROR_CHECK(hal_nfc_send(chunk_data, 16));
+        } else if ((full_block + 3) * 4 < (int)tag_bytes) {
+            memcpy(chunk_data, &plain[full_block * 4], 16);
 
-            // READ command will return 4 pages (16 bytes)
             // empirically, S2 with JC1 will poll page 0xEC to read SRAM_RF_READY (which is in ED)
             if (ntag_emu.ntag.type == NTAG_I2C_PLUS_2K && full_block == 0xEC) {
-                // set NS_REG.SRAM_RF_READY (byte 2 of page ED)
-                // switch 2 will poll until this is set, and *then* read sram pages
-                chunk_data[6] |= 0b1000;
+                *(chunk_data + 6) |= 0b1000;
             }
 
             APP_ERROR_CHECK(hal_nfc_send(chunk_data, 16));
@@ -126,9 +136,9 @@ static void nfc_received_process(const uint8_t *p_data, size_t data_length, uint
             hal_send_ack_nack(0x0);
         }
         break;
+    }
     case N2_CMD_WRITE:
-        // similar to write but with one extra paramter to specify the bank number
-        NRF_LOG_INFO("N2E Write slot:%d:", p_data[2]);
+        NRF_LOG_INFO("N2E Write slot:%d:", *(p_data + 2));
         data_length = 6;
         p_data = p_data + 1;
     case NFC_CMD_WRITE:
@@ -140,13 +150,11 @@ static void nfc_received_process(const uint8_t *p_data, size_t data_length, uint
         }
         if (data_length == 6) {
             ntag_emu.dirty = true;
-            int full_block_num = (((int) ntag_emu.sector) * 256) + block_num;
-            if (ntag_emu.ntag.type == NTAG_215 && (full_block_num == 133 || full_block_num == 134)) {
-                // ignore
-            } else if (full_block_num == 2) {
-                plain[full_block_num * 4 + 2] = p_data[4];
-                plain[full_block_num * 4 + 3] = p_data[5];
-            } else {
+            int full_block_num = (((int)ntag_emu.sector) * 256) + block_num;
+            if (full_block_num == 2) {
+                plain[full_block_num * 4 + 2] = *(p_data + 4);
+                plain[full_block_num * 4 + 3] = *(p_data + 5);
+            } else if ((full_block_num + 1) * 4 <= (int)_ntag_data_size(&ntag_emu.ntag)) {
                 for (int i = 0; i < 4; i++) {
                     plain[full_block_num * 4 + i] = p_data[i + 2];
                 }
@@ -169,24 +177,35 @@ static void nfc_received_process(const uint8_t *p_data, size_t data_length, uint
         hal_nfc_send(NTAG215_Signature, 32);
         break;
     case N2_CMD_FAST_READ: // TODO
-        NRF_LOG_INFO("N2E Fast Read slot %d:", p_data[3]);
-    case NFC_CMD_FAST_READ:
+        NRF_LOG_INFO("N2E Fast Read slot %d:", *(p_data + 3));
+    case NFC_CMD_FAST_READ: {
         int start_page = block_num + (ntag_emu.sector * 256);
-        int end_page = p_data[2] + (ntag_emu.sector * 256);
+        int end_page = *(p_data + 2) + (ntag_emu.sector * 256);
         int page_count = end_page - start_page + 1;
+        uint8_t *tx_buf = hal_nfc_get_tx_buffer();
 
         if (ntag_emu.ntag.type == NTAG_I2C_PLUS_2K && start_page == 0xed && end_page == 0xed) {
-            static uint8_t ed_page[4] = {0};
-            memcpy(ed_page, &plain[start_page*4], 4);
-
-            // set NS_REG.SRAM_RF_READY
-            // switch 2 will poll until this is set, and *then* read sram pages
-            ed_page[2] |= 0b1000;
-            hal_nfc_send(ed_page, 4);
+            memcpy(tx_buf, &plain[start_page * 4], 4);
+            *(tx_buf + 2) |= 0b1000;
+            hal_nfc_send(tx_buf, 4);
+        } else if (ntag_emu.ntag.type == NTAG_215 && page_count > 0 && page_count <= 150) {
+            int total_pages = NTAG_DATA_SIZE / 4; // 135 pages
+            for (int i = 0; i < page_count; i++) {
+                int page = (start_page + i) % total_pages;
+                if (page == 133 || page == 134) {
+                    memset(tx_buf + (i * 4), 0x00, 4);
+                } else {
+                    memcpy(tx_buf + (i * 4), &plain[page * 4], 4);
+                }
+            }
+            hal_nfc_send(tx_buf, page_count * 4);
+        } else if (page_count > 0 && (end_page + 1) * 4 <= (int)_ntag_data_size(&ntag_emu.ntag)) {
+            hal_nfc_send(&plain[start_page * 4], page_count * 4);
         } else {
-            hal_nfc_send(&plain[start_page*4], page_count*4);
+            hal_send_ack_nack(0x0);
         }
         break;
+    }
     case NFC_CMD_PWD_AUTH:
         NRF_LOG_INFO("NFC Password: %x %x %x %x", p_data[1], p_data[2], p_data[3], p_data[4]);
         hal_nfc_send(NTAG215_PwdOK, 2);
