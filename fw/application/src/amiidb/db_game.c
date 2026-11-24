@@ -76,6 +76,7 @@ const db_game_t game_list[] = {
 {73, 0, "Donkey Kong Bananza", "咚奇刚 蕉力全开", 5, 2}, 
 {74, 0, "Metroid Prime 4: Beyond", "密特罗德 究极4 超越未知", 10, 3}, 
 {75, 0, "Kirby Air Riders", "卡比的驭天飞行者", 1, 2}, 
+{76, 0, "The Legend of Zelda: Ocarina Of Time", "塞尔达传说：时之笛", 15, 2}, 
 {255, 0, "Others", "未分类", 0, 0}, 
 {0, 0, 0, 0, 0}
 };
